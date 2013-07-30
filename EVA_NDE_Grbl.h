@@ -63,6 +63,7 @@ public:
    int OnPort(MM::PropertyBase* pPropt, MM::ActionType eAct);
    int OnVersion(MM::PropertyBase* pPropt, MM::ActionType eAct);
    int OnStatus(MM::PropertyBase* pProp, MM::ActionType pAct);
+   int OnCommand(MM::PropertyBase* pProp, MM::ActionType pAct);
    // custom interface for child devices
    bool IsPortAvailable() {return portAvailable_;}
    bool IsTimedOutputActive() {return timedOutputActive_;}
@@ -90,6 +91,7 @@ public:
 private:
    MMThreadLock executeLock_;
    std::string status_;
+   std::string commandResult_;
    std::string port_;
    std::string version_;
    bool initialized_;

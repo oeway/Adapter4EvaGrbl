@@ -137,10 +137,10 @@ initialized_ (false)
    SetErrorText(ERR_VERSION_MISMATCH, errorText.str().c_str());
 
    CPropertyAction* pAct  = new CPropertyAction(this, &CEVA_NDE_GrblHub::OnPort);
-   CreateProperty("ComPort", "Undifined", MM::String, false, pAct, true);
+   CreateProperty("ComPort", "Undifined", MM::String, false, pAct);
 
    pAct = new CPropertyAction(this, &CEVA_NDE_GrblHub::OnStatus);
-   CreateProperty("Status", "-", MM::String, false, pAct, true);
+   CreateProperty("Status", "-", MM::String, false, pAct);
 }
 
 CEVA_NDE_GrblHub::~CEVA_NDE_GrblHub()
@@ -356,6 +356,7 @@ int CEVA_NDE_GrblHub::Initialize()
       return ret;
 
 
+
    MMThreadGuard myLock(lock_);
 
    CPropertyAction* pAct = new CPropertyAction(this, &CEVA_NDE_GrblHub::OnVersion);
@@ -363,7 +364,12 @@ int CEVA_NDE_GrblHub::Initialize()
    sversion << version_;
    CreateProperty(g_versionProp, sversion.str().c_str(), MM::String, true, pAct);
 
-      std::string selectPort="Undefined";
+   pAct = new CPropertyAction(this, &CEVA_NDE_GrblHub::OnCommand);
+   ret = CreateProperty("Command","", MM::String, false, pAct);
+   if (DEVICE_OK != ret)
+      return ret;
+
+   std::string selectPort="Undefined";
 
    //list all available ports
    SerialPortLister spl;
@@ -389,15 +395,11 @@ int CEVA_NDE_GrblHub::Initialize()
    //   return ret;
 
    // The first second or so after opening the serial port, the EVA_NDE_Grbl is waiting for firmwareupgrades.  Simply sleep 1 second.
-   ret = Reset(); 
-   if (DEVICE_OK != ret)
-      return ret;
-   if (version_.compare("Grbl 0.8c "))
-      return ERR_VERSION_MISMATCH;
-      CDeviceUtils::SleepMs(500);
+
+   //CDeviceUtils::SleepMs(500);
    // Check that we have a controller:
    ret = GetStatus();
-   if( DEVICE_OK != ret)
+   if( DEVICE_OK != ret) 
       return ret;
 
    //ret =SetParameter(0,100);
@@ -408,6 +410,8 @@ int CEVA_NDE_GrblHub::Initialize()
    if( DEVICE_OK != ret)
       return ret;
 
+   // synchronize all properties
+   // --------------------------
    ret = UpdateStatus();
    if (ret != DEVICE_OK)
       return ret;
@@ -467,6 +471,12 @@ int CEVA_NDE_GrblHub::OnPort(MM::PropertyBase* pProp, MM::ActionType pAct)
 	  comPort->SetCallback (GetCoreCallback());
 	  comPort->SetProperty("AnswerTimeout","0.4");
 	  comPort->SetProperty(MM::g_Keyword_Handshaking, "Off");
+	  portAvailable_ = false;
+	   int ret = Reset(); 
+	   if (DEVICE_OK != ret)
+		  return ret;
+	   if (version_.compare("Grbl 0.8c "))
+		  return ERR_VERSION_MISMATCH;
       portAvailable_ = true;
    }
    return DEVICE_OK;
@@ -493,6 +503,26 @@ int CEVA_NDE_GrblHub::OnVersion(MM::PropertyBase* pProp, MM::ActionType pAct)
    return DEVICE_OK;
 }
 
+int CEVA_NDE_GrblHub::OnCommand(MM::PropertyBase* pProp, MM::ActionType pAct)
+{
+   if (pAct == MM::BeforeGet)
+   {
+	   pProp->Set(commandResult_.c_str());
+   }
+   else if (pAct == MM::AfterSet)
+   {
+	   std::string cmd;
+      pProp->Get(cmd);
+	  if(cmd.compare(commandResult_) ==0)  // command result still there
+		  return DEVICE_OK;
+	  int ret = SendCommand(cmd,commandResult_);
+	  if(DEVICE_OK != ret){
+		  commandResult_.assign("Error!");
+		  return DEVICE_ERR;
+	  }
+   }
+   return DEVICE_OK;
+}
 
 SerialPort* CEVA_NDE_GrblHub::CreatePort(const char* portName)
 {
