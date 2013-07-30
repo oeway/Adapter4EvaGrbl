@@ -87,10 +87,11 @@ public:
    int Reset();
    double MPos[3];
    double WPos[3];
-   int GetStatus();
+   int GetStatus(); 
+   std::string status;
 private:
    MMThreadLock executeLock_;
-   std::string status_;
+
    std::string commandResult_;
    std::string port_;
    std::string version_;

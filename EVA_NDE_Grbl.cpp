@@ -140,7 +140,7 @@ initialized_ (false)
    CreateProperty("ComPort", "Undifined", MM::String, false, pAct);
 
    pAct = new CPropertyAction(this, &CEVA_NDE_GrblHub::OnStatus);
-   CreateProperty("Status", "-", MM::String, false, pAct);
+   CreateProperty("Status", "-", MM::String, true, pAct);  //read only
 }
 
 CEVA_NDE_GrblHub::~CEVA_NDE_GrblHub()
@@ -180,7 +180,7 @@ int CEVA_NDE_GrblHub::GetStatus()
 	if(tokenInput.size() != 9)
 		return DEVICE_ERR;
 
-	SetProperty("Status",tokenInput[0].c_str());
+	status.assign(tokenInput[0].c_str());
 	MPos[0] = stringToNum<double>(tokenInput[2]);
 	MPos[1] = stringToNum<double>(tokenInput[3]);
 	MPos[2] = stringToNum<double>(tokenInput[4]);
@@ -485,12 +485,10 @@ int CEVA_NDE_GrblHub::OnStatus(MM::PropertyBase* pProp, MM::ActionType pAct)
 {
    if (pAct == MM::BeforeGet)
    {
-      pProp->Set(status_.c_str());
-   }
-   else if (pAct == MM::AfterSet)
-   {
-      pProp->Get(status_);
-
+	  int ret = GetStatus();
+	  if(ret != DEVICE_OK)
+		  return DEVICE_ERR;
+      pProp->Set(status.c_str());
    }
    return DEVICE_OK;
 }

@@ -206,6 +206,7 @@ int XYStage::Initialize()
    CreateProperty(g_SyncStepProp, "1.0", MM::Float, false, pAct);
    //SetPropertyLimits("Acceleration", 0.0, 150);
 
+
    ret = UpdateStatus();
    if (ret != DEVICE_OK)
       return ret;
@@ -344,9 +345,7 @@ int XYStage::SetRelativePositionUm(double dx, double dy){
 int XYStage::Home()
 {
    int ret;
-
    home_ = true; // successfully homed
-
    // check status
    
    return DEVICE_OK;
@@ -478,6 +477,7 @@ int XYStage::OnSyncStep(MM::PropertyBase* pProp, MM::ActionType eAct)
 
    return DEVICE_OK;
 }
+
 ///////////////////////////////////////////////////////////////////////////////
 // private methods
 ///////////////////////////////////////////////////////////////////////////////
