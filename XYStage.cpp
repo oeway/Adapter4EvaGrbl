@@ -23,7 +23,7 @@
 #include "../../MMDevice/ModuleInterface.h"
 #include "XYStage.h"
 #include <sstream>
-#include "EvaNdeCtrl.h"
+#include "EVA_NDE_Grbl.h"
 
 ///////////
 // properties
@@ -41,6 +41,7 @@ const char* g_MaxVelocityProp = "MaxVelocity";
 const char* g_AccelProp = "Acceleration";
 const char* g_MoveTimeoutProp = "MoveTimeoutMs";
 
+const char* g_SyncStepProp = "SyncStep";
 using namespace std;
 
 ///////////
@@ -64,68 +65,37 @@ class XYStage::CommandThread : public MMDeviceThreadBase
          stop_(false), moving_(false), stage_(stage), errCode_(DEVICE_OK) {}
 
       virtual ~CommandThread() {}
-
+	  
       int svc()
       {
-		    CEvaNdeCtrlHub* hub = static_cast<CEvaNdeCtrlHub*>(stage_->GetParentHub());
-		   if (!hub || !hub->IsPortAvailable()) {
-			  return ERR_NO_PORT_SET;
-		   }
-         if (cmd_ == MOVE)
-         {
-            moving_ = true;
-			char buff[100];
-			sprintf(buff, "G01X%dY%d", x_,y_);
-			std::string buffAsStdStr = buff;
-            errCode_ = hub->SendCommand(buffAsStdStr); //stage_->MoveBlocking(x_, y_);
-            moving_ = false;
-            ostringstream os;
-            os << "Move finished with error code: " << errCode_;
-            stage_->LogMessage(os.str().c_str(), true);
-         }
-         else if (cmd_ == MOVEREL)
-         {
-            moving_ = true;
-			char buff[100];
-			sprintf(buff, "G00X%dY%d", x_,y_);
-			std::string buffAsStdStr = buff;
-            errCode_ = hub->SendCommand(buffAsStdStr);  // relative move
-			moving_ = false;
-            ostringstream os;
-            os << "Move finished with error code: " << errCode_;
-            stage_->LogMessage(os.str().c_str(), true);
-         }
+		CEVA_NDE_GrblHub* hub = static_cast<CEVA_NDE_GrblHub*>(stage_->GetParentHub());
+		if (!hub || !hub->IsPortAvailable()) {
+			return ERR_NO_PORT_SET;
+		}
+		while(1)
+		{
+			int ret = hub->GetStatus();
+			if(ret != DEVICE_OK){
+				moving_ = false;
+				break;
+			}
+			char buf[30]="";
+			ret = hub->GetProperty("Status",buf);
+			if((strcmp(buf,"Idle") == 0 )){
+				moving_ = false;
+				break;
+			}
+			else
+				moving_ = true;
+			CDeviceUtils::SleepMs(10);
+		}
+
          return 0;
       }
       void Stop() {stop_ = true;}
       bool GetStop() {return stop_;}
       int GetErrorCode() {return errCode_;}
-      bool IsMoving()  {return moving_;}
-
-      void StartMove(long x, long y)
-      {
-         Reset();
-         x_ = x;
-         y_ = y;
-         cmd_ = MOVE;
-         activate();
-      }
-
-      void StartMoveRel(long dx, long dy)
-      {
-         Reset();
-         x_ = dx;
-         y_ = dy;
-         cmd_ = MOVEREL;
-         activate();
-      }
-
-      void StartHome()
-      {
-         Reset();
-         cmd_ = HOME;
-         activate();
-      }
+      bool IsMoving()  {  return moving_;}
 
    private:
       void Reset() {stop_ = false; errCode_ = DEVICE_OK; moving_ = false;}
@@ -136,6 +106,7 @@ class XYStage::CommandThread : public MMDeviceThreadBase
       long x_;
       long y_;
       Command cmd_;
+      Command lastCmd_;
       int errCode_;
 };
 
@@ -166,7 +137,7 @@ XYStage::XYStage() :
    CreateProperty(MM::g_Keyword_Name, g_XYStageDeviceName, MM::String, true);
 
    // Description
-   CreateProperty(MM::g_Keyword_Description, "Thorlabs BBD102 XY stage adapter", MM::String, true);
+   CreateProperty(MM::g_Keyword_Description, "XY stage adapter for EvaGrbl -- by Wei Ouyang", MM::String, true);
 
 
    cmdThread_ = new CommandThread(this);
@@ -188,13 +159,16 @@ void XYStage::GetName(char* name) const
 
 int XYStage::Initialize()
 {
-   CEvaNdeCtrlHub* hub = static_cast<CEvaNdeCtrlHub*>(GetParentHub());
+   CEVA_NDE_GrblHub* hub = static_cast<CEVA_NDE_GrblHub*>(GetParentHub());
    if (!hub || !hub->IsPortAvailable()) {
       return ERR_NO_PORT_SET;
    }
    char hubLabel[MM::MaxStrLength];
    hub->GetLabel(hubLabel);
    SetParentID(hubLabel); // for backward comp.
+
+
+   parameters_ = &hub->parameters;
 
    int ret = DEVICE_ERR;
 
@@ -227,6 +201,11 @@ int XYStage::Initialize()
    CreateProperty(g_MoveTimeoutProp, "10000.0", MM::Float, false, pAct);
    //SetPropertyLimits("Acceleration", 0.0, 150);
 
+   // Sync Step
+   pAct = new CPropertyAction (this, &XYStage::OnSyncStep);
+   CreateProperty(g_SyncStepProp, "1.0", MM::Float, false, pAct);
+   //SetPropertyLimits("Acceleration", 0.0, 150);
+
    ret = UpdateStatus();
    if (ret != DEVICE_OK)
       return ret;
@@ -255,28 +234,23 @@ int XYStage::Shutdown()
 
 bool XYStage::Busy()
 {
-   return cmdThread_->IsMoving();
+	return false;
 }
  
 double XYStage::GetStepSizeXUm()
 {
-   return stepSizeUm;
+   return 1000.0/(*parameters_)[0];
 }
 
 double XYStage::GetStepSizeYUm()
 {
-   return stepSizeUm;
+   return 1000.0/(*parameters_)[1];
 }
 
 int XYStage::SetPositionSteps(long x, long y)
 {
-   //if (!home_)
-   //   return ERR_HOME_REQUIRED; 
 
-   //if (Busy())
-   //   return ERR_BUSY;
-
-   cmdThread_->StartMove(x, y);
+   SetPositionUm(x*GetStepSizeXUm(), y*GetStepSizeYUm());
    CDeviceUtils::SleepMs(10); // to make sure that there is enough time for thread to get started
 
    return DEVICE_OK;   
@@ -284,36 +258,84 @@ int XYStage::SetPositionSteps(long x, long y)
  
 int XYStage::SetRelativePositionSteps(long x, long y)
 {
-   //if (!home_)
-   //   return ERR_HOME_REQUIRED; 
-
-   //if (Busy())
-   //   return ERR_BUSY;
-
-   cmdThread_->StartMoveRel(x, y);
-
+   SetRelativePositionUm(x*GetStepSizeXUm(), y*GetStepSizeYUm());
    return DEVICE_OK;
 }
-
-int XYStage::GetPositionSteps(long& x, long& y)
-{
+int XYStage::GetPositionUm(double& x, double& y){
    int ret;
-
-   // if not homed just return default
-   if (!home_)
-   {
-      x = 0L;
-      y = 0L;
-      return DEVICE_OK;
-   }
-
-
+   	CEVA_NDE_GrblHub* hub = static_cast<CEVA_NDE_GrblHub*>(GetParentHub());
+	if (!hub || !hub->IsPortAvailable()) {
+		return ERR_NO_PORT_SET;
+	}
+    ret = hub->GetStatus();
+	if (ret != DEVICE_OK)
+    return ret;
+	x =  hub->MPos[0]*1000.0 ;
+	y =   hub->MPos[1]*1000.0;
    ostringstream os;
    os << "GetPositionSteps(), X=" << x << ", Y=" << y;
    LogMessage(os.str().c_str(), true);
-
+}
+int XYStage::GetPositionSteps(long& x, long& y)
+{
+   int ret;
+   	CEVA_NDE_GrblHub* hub = static_cast<CEVA_NDE_GrblHub*>(GetParentHub());
+	if (!hub || !hub->IsPortAvailable()) {
+		return ERR_NO_PORT_SET;
+	}
+    ret = hub->GetStatus();
+	if (ret != DEVICE_OK)
+    return ret;
+	x =  hub->MPos[0]*1000 /GetStepSizeXUm();
+	y =   hub->MPos[1]*1000 /GetStepSizeXUm();
+   ostringstream os;
+   os << "GetPositionSteps(), X=" << x << ", Y=" << y;
+   LogMessage(os.str().c_str(), true);
    return DEVICE_OK;
 }
+int XYStage::SetPositionUm(double x, double y){
+	 CEVA_NDE_GrblHub* hub = static_cast<CEVA_NDE_GrblHub*>(GetParentHub());
+	if (!hub || !hub->IsPortAvailable()) {
+		return ERR_NO_PORT_SET;
+	}
+	int errCode_ = DEVICE_ERR;
+	if(lastMode_ != MOVE){
+		std::string tmp("G90");
+		errCode_ = hub->SendCommand(tmp,tmp);
+		lastMode_ = MOVE;
+	}
+	char buff[100];
+	sprintf(buff, "G01X%fY%f", x/1000.0,y/1000.0);
+	std::string buffAsStdStr = buff;
+	errCode_ = hub->SendCommand(buffAsStdStr,buffAsStdStr); //stage_->MoveBlocking(x_, y_);
+
+	ostringstream os;
+	os << "Move finished with error code: " << errCode_;
+	LogMessage(os.str().c_str(), true);
+	return errCode_;
+}
+int XYStage::SetRelativePositionUm(double dx, double dy){
+	 CEVA_NDE_GrblHub* hub = static_cast<CEVA_NDE_GrblHub*>(GetParentHub());
+	if (!hub || !hub->IsPortAvailable()) {
+		return ERR_NO_PORT_SET;
+	}
+	int errCode_ = DEVICE_ERR;
+	if(lastMode_ != MOVEREL){
+		std::string tmp("G91");
+		errCode_ = hub->SendCommand(tmp,tmp);
+		lastMode_ = MOVEREL;
+	}
+	char buff[100];
+	sprintf(buff, "G01X%fY%f", dx/1000.0,dy/1000.0);
+	std::string buffAsStdStr = buff;
+    errCode_ = hub->SendCommand(buffAsStdStr,buffAsStdStr);  // relative move
+
+    ostringstream os;
+    os << "Move finished with error code: " << errCode_;
+    LogMessage(os.str().c_str(), true);
+	return errCode_;
+}
+
 
 /**
  * Performs homing for both axes
@@ -322,8 +344,6 @@ int XYStage::GetPositionSteps(long& x, long& y)
 int XYStage::Home()
 {
    int ret;
-
-
 
    home_ = true; // successfully homed
 
@@ -431,7 +451,33 @@ int XYStage::OnMoveTimeout(MM::PropertyBase* pProp, MM::ActionType eAct)
 
    return DEVICE_OK;
 }
+/**
+ * Gets and sets the sync signal step
+ */
+int XYStage::OnSyncStep(MM::PropertyBase* pProp, MM::ActionType eAct) 
+{
+   if (eAct == MM::BeforeGet) 
+   {
 
+      pProp->Set(syncStep_);
+
+   } 
+   else if (eAct == MM::AfterSet) 
+   {   
+	   CEVA_NDE_GrblHub* hub = static_cast<CEVA_NDE_GrblHub*>(GetParentHub());
+	   if (!hub || !hub->IsPortAvailable()) {
+		  return ERR_NO_PORT_SET;
+	   }
+
+      pProp->Get(syncStep_);
+
+	   int ret = hub->SetSync(0,syncStep_);
+	   if(ret != DEVICE_OK)
+		   return ret;
+   }
+
+   return DEVICE_OK;
+}
 ///////////////////////////////////////////////////////////////////////////////
 // private methods
 ///////////////////////////////////////////////////////////////////////////////

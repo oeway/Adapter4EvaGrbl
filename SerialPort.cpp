@@ -548,6 +548,7 @@ int SerialPort::GetAnswer(char* answer, unsigned bufLen, const char* term)
    int retryCounter = 0;
    while ((GetCurrentMMTime() - startTime)  < answerTimeout)
    {
+
       MM::MMTime tNow = GetCurrentMMTime();
       if ( retryWarnInterval < tNow - retryWarnTime)
       {

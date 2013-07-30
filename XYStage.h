@@ -70,7 +70,10 @@ public:
    int OnMaxVelocity(MM::PropertyBase* pProp, MM::ActionType eAct);
    int OnAcceleration(MM::PropertyBase* pProp, MM::ActionType eAct);
    int OnMoveTimeout(MM::PropertyBase* pProp, MM::ActionType eAct);
-
+   int OnSyncStep(MM::PropertyBase* pProp, MM::ActionType eAct);   
+   int SetPositionUm(double x, double y);
+   int SetRelativePositionUm(double dx, double dy);
+   int GetPositionUm(double& x, double& y);
 private:
    
    enum Axis {X, Y};
@@ -79,14 +82,18 @@ private:
    int SetCommand(const unsigned char* command, unsigned cmdLength);
    int GetCommand(unsigned char* answer, unsigned answerLength, double TimeoutMs);
 
-
+   double syncStep_;
    class CommandThread;
 
    bool initialized_;            // true if the device is intitalized
    bool home_;                   // true if stage is homed
    double answerTimeoutMs_;      // max wait for the device to answer
    double moveTimeoutMs_;        // max wait for stage to finish moving
+  
+   enum MOVE_MODE {MOVE, MOVEREL, HOME};
+   MOVE_MODE lastMode_;
 
+   std::vector<double> *  parameters_;
    CommandThread* cmdThread_;    // thread used to execute move commands
 };
 

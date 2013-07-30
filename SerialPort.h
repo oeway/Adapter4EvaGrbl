@@ -120,7 +120,7 @@ public:
 
 
    bool Initialized(void) { return initialized_;};
-
+   void SetAnswerTimeoutMs(double timeout){ answerTimeoutMs_ = timeout; };
 
 private:
    std::string portName_;

@@ -1,9 +1,9 @@
  //////////////////////////////////////////////////////////////////////////////
-// FILE:          EvaNdeCtrl.h
+// FILE:          EVA_NDE_Grbl.h
 // PROJECT:       Micro-Manager
 // SUBSYSTEM:     DeviceAdapters
 //-----------------------------------------------------------------------------
-// DESCRIPTION:   Adapter for EvaNdeCtrl board
+// DESCRIPTION:   Adapter for EVA_NDE_Grbl board
 //                Needs accompanying firmware to be installed on the board
 // COPYRIGHT:     University of California, San Francisco, 2008
 // LICENSE:       LGPL
@@ -13,8 +13,8 @@
 //
 //
 
-#ifndef _EvaNdeCtrl_H_
-#define _EvaNdeCtrl_H_
+#ifndef _EVA_NDE_Grbl_H_
+#define _EVA_NDE_Grbl_H_
 
 #include "../../MMDevice/MMDevice.h"
 #include "../../MMDevice/DeviceBase.h"
@@ -34,13 +34,18 @@
 #define ERR_NO_PORT_SET 108
 #define ERR_VERSION_MISMATCH 109
 
-class EvaNdeCtrlInputMonitorThread;
+#define PARAMETERS_COUNT 23
 
-class CEvaNdeCtrlHub : public HubBase<CEvaNdeCtrlHub>  
+extern std::vector<std::string> &split(const std::string &s, char delim, std::vector<std::string> &elems);
+std::vector<std::string> split(const std::string &s, char delim);
+
+class EVA_NDE_GrblInputMonitorThread;
+
+class CEVA_NDE_GrblHub : public HubBase<CEVA_NDE_GrblHub>  
 {
 public:
-   CEvaNdeCtrlHub();
-   ~CEvaNdeCtrlHub();
+   CEVA_NDE_GrblHub();
+   ~CEVA_NDE_GrblHub();
 
    SerialPort* CreatePort(const char* portName);
    void DestroyPort(SerialPort* port);
@@ -57,7 +62,7 @@ public:
    // property handlers
    int OnPort(MM::PropertyBase* pPropt, MM::ActionType eAct);
    int OnVersion(MM::PropertyBase* pPropt, MM::ActionType eAct);
-
+   int OnStatus(MM::PropertyBase* pProp, MM::ActionType pAct);
    // custom interface for child devices
    bool IsPortAvailable() {return portAvailable_;}
    bool IsTimedOutputActive() {return timedOutputActive_;}
@@ -70,18 +75,29 @@ public:
       return ReadFromComPort(port_.c_str(), answer, maxLen, bytesRead);
    }
    static MMThreadLock& GetLock() {return lock_;}
-   int CEvaNdeCtrlHub::SendCommand(std::string cmd);
+
+   int SendCommand(std::string command, std::string &returnString);
+   int SetAnswerTimeoutMs(double timout);
+   int SetSync(int axis, double value );
    SerialPort* comPort;
-private:
+   int GetParameters();
+   int SetParameter(int index, double value);
+   std::vector<double> parameters;
+   int Reset();
+   double MPos[3];
+   double WPos[3];
    int GetStatus();
+private:
+   MMThreadLock executeLock_;
+   std::string status_;
    std::string port_;
+   std::string version_;
    bool initialized_;
    bool portAvailable_;
    bool timedOutputActive_;
-   int version_;
    static MMThreadLock lock_;
 
    std::vector<SerialPort*> ports_;
 };
 
-#endif //_EvaNdeCtrl_H_
+#endif //_EVA_NDE_Grbl_H_
