@@ -508,6 +508,7 @@ int SerialPort::SetCommand(const char* command, const char* term)
    {
       pPort_->WriteCharactersSynchronously(sendText.c_str(), (int) sendText.length() );
       written = sendText.length();
+
    }
    else
    {
@@ -518,6 +519,7 @@ int SerialPort::SetCommand(const char* command, const char* term)
          pPort_->WriteOneCharacterSynchronously(*jj );
          CDeviceUtils::SleepMs((long)(0.5+transmitCharWaitMs_));         
          ++written;
+
       }
    }
    if( DEVICE_OK == retv)
@@ -558,11 +560,13 @@ int SerialPort::GetAnswer(char* answer, unsigned bufLen, const char* term)
             LogMessage((std::string("GetAnswer # retries = ") + 
                 boost::lexical_cast<std::string,int>(retryCounter)).c_str(), true);
          }
+
         retryCounter++;
       }
       bool anyRead =  pPort_->ReadOneCharacter(theData);        
       if( anyRead )
       {
+
          if (bufLen <= answerOffset)
          {
             answer[answerOffset] = '\0';

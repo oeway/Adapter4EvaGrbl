@@ -171,15 +171,19 @@ int CEVA_NDE_GrblHub::GetStatus()
    std::string returnString;
    int ret = SendCommand(cmd,returnString);
    if (ret != DEVICE_OK)
+   {
+	 LogMessage("command send failed!");
     return ret;
-
+   }
    std::vector<std::string> tokenInput;
 	char* pEnd;
    	CDeviceUtils::Tokenize(returnString, tokenInput, "<>,:\r\n");
    //sample: <Idle,MPos:0.000,0.000,0.000,WPos:0.000,0.000,0.000>
 	if(tokenInput.size() != 9)
+	{
+		LogMessage("echo error!");
 		return DEVICE_ERR;
-
+	}
 	status.assign(tokenInput[0].c_str());
 	MPos[0] = stringToNum<double>(tokenInput[2]);
 	MPos[1] = stringToNum<double>(tokenInput[3]);
@@ -297,33 +301,50 @@ int CEVA_NDE_GrblHub::SendCommand(std::string command, std::string &returnString
    comPort->Purge();
    ret = comPort->SetCommand(command.c_str(),"\n");
    if (ret != DEVICE_OK)
-      return ret;
-
+   {
+	    LogMessage(std::string("command write fail"));
+	   return ret;
+   }
    if(command.c_str()[0] == '$' || command.c_str()[0] == '?'){
 		char an[1024];
 		ret = comPort->GetAnswer(an,1024,"ok\r\n");
 	   //ret = comPort->Read(answer,3,charsRead);
 	   if (ret != DEVICE_OK)
+	   {
+		   LogMessage(std::string("answer get error!"));
 		  return ret;
+	   }
 	   returnString.assign(an);
 	   return DEVICE_OK;
 
    }
    else{ 
-	   char an[64];
-		ret = comPort->GetAnswer(an,64,"\r\n");
-	   //ret = comPort->Read(answer,3,charsRead);
-	   if (ret != DEVICE_OK)
-		  return ret;
-
-	   //sample:>>? >><Idle,MPos:0.000,0.000,0.000,WPos:0.000,0.000,0.000>
-	   if (strlen(an) <1)
+	   try
+	   {
+		   char an[128];
+			ret = comPort->GetAnswer(an,128,"\r\n");
+		   //ret = comPort->Read(answer,3,charsRead);
+		   if (ret != DEVICE_OK)
+		   {
+			   LogMessage(std::string("answer get error!_"));
+			  return ret;
+		   }
+		   LogMessage(std::string(an),true);
+		   //sample:>>? >><Idle,MPos:0.000,0.000,0.000,WPos:0.000,0.000,0.000>
+		   if (strlen(an) <1)
+			  return DEVICE_ERR;
+		   returnString.assign(an);
+		   if (returnString.find("ok") != std::string::npos)
+			   return DEVICE_OK;
+		   else
+			   return DEVICE_ERR;
+	   }
+	   catch(...)
+	   {
+		  LogMessage("Exception in send command!");
 		  return DEVICE_ERR;
-	   returnString.assign(an);
-	   if (returnString.find("ok") != std::string::npos)
-		   return DEVICE_OK;
-	   else
-		   return DEVICE_ERR;
+	   }
+
    }
 }
 
