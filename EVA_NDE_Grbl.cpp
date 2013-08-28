@@ -405,6 +405,8 @@ int CEVA_NDE_GrblHub::Initialize()
 	   AddAllowedValue("ComPort",selectPort.c_str());
    }
 
+   selectPort.assign("COM4");
+
    SetProperty("ComPort",selectPort.c_str());
 
 

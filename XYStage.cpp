@@ -306,7 +306,7 @@ int XYStage::SetPositionUm(double x, double y){
 		lastMode_ = MOVE;
 	}
 	char buff[100];
-	sprintf(buff, "G01X%fY%f", x/1000.0,y/1000.0);
+	sprintf(buff, "G00X%fY%f", x/1000.0,y/1000.0);
 	std::string buffAsStdStr = buff;
 	errCode_ = hub->SendCommand(buffAsStdStr,buffAsStdStr); //stage_->MoveBlocking(x_, y_);
 
@@ -327,7 +327,7 @@ int XYStage::SetRelativePositionUm(double dx, double dy){
 		lastMode_ = MOVEREL;
 	}
 	char buff[100];
-	sprintf(buff, "G01X%fY%f", dx/1000.0,dy/1000.0);
+	sprintf(buff, "G00X%fY%f", dx/1000.0,dy/1000.0);
 	std::string buffAsStdStr = buff;
     errCode_ = hub->SendCommand(buffAsStdStr,buffAsStdStr);  // relative move
 
