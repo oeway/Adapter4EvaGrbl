@@ -181,6 +181,7 @@ int CEVA_NDE_GrblHub::GetStatus()
    //sample: <Idle,MPos:0.000,0.000,0.000,WPos:0.000,0.000,0.000>
 	if(tokenInput.size() != 9)
 	{
+		LogMessage(returnString.c_str());
 		LogMessage("echo error!");
 		return DEVICE_ERR;
 	}
@@ -293,19 +294,35 @@ int CEVA_NDE_GrblHub::SendCommand(std::string command, std::string &returnString
 {
    // needs a lock because the other Thread will also use this function
    MMThreadGuard(this->executeLock_);
+   comPort->Purge();
    int ret = DEVICE_OK;
-   if(command.c_str()[0] == '$' || command.c_str()[0] == '?')
+   	if(command.c_str()[0] == '$' && command.c_str()[1] == 'H') 
+	{
+		ret = GetStatus();
+		if( DEVICE_OK != ret) 
+			return ret;
+	   	comPort->SetAnswerTimeoutMs(60000);  //60s
+	}
+   else if(command.c_str()[0] == '$' || command.c_str()[0] == '?')
 	   comPort->SetAnswerTimeoutMs(1500);  //for long command
    else
 	   comPort->SetAnswerTimeoutMs(100);  //for normal command
-   comPort->Purge();
+
    ret = comPort->SetCommand(command.c_str(),"\n");
    if (ret != DEVICE_OK)
    {
 	    LogMessage(std::string("command write fail"));
 	   return ret;
    }
-   if(command.c_str()[0] == '$' || command.c_str()[0] == '?'){
+   if(command.c_str()[0] == 0x18 ){
+        CDeviceUtils::SleepMs(600);
+	    ret = GetParameters();
+	    returnString.assign("ok");
+		LogMessage(std::string("Reset!"));
+		return DEVICE_OK;
+   }
+   else if(command.c_str()[0] == '$' || command.c_str()[0] == '?'){
+
 		char an[1024];
 		ret = comPort->GetAnswer(an,1024,"ok\r\n");
 	   //ret = comPort->Read(answer,3,charsRead);
@@ -419,7 +436,7 @@ int CEVA_NDE_GrblHub::Initialize()
 
    // The first second or so after opening the serial port, the EVA_NDE_Grbl is waiting for firmwareupgrades.  Simply sleep 1 second.
 
-   //CDeviceUtils::SleepMs(500);
+   CDeviceUtils::SleepMs(600);
    // Check that we have a controller:
    ret = GetStatus();
    if( DEVICE_OK != ret) 
