@@ -137,7 +137,8 @@ initialized_ (false)
    SetErrorText(ERR_VERSION_MISMATCH, errorText.str().c_str());
 
    CPropertyAction* pAct  = new CPropertyAction(this, &CEVA_NDE_GrblHub::OnPort);
-   CreateProperty("ComPort", "Undifined", MM::String, false, pAct);
+   //CreateProperty("ComPort", "Undifined", MM::String, false, pAct);
+   CreateProperty(MM::g_Keyword_Port, "Undefined", MM::String, false, pAct, true);
 
    pAct = new CPropertyAction(this, &CEVA_NDE_GrblHub::OnStatus);
    CreateProperty("Status", "-", MM::String, true, pAct);  //read only
@@ -146,9 +147,7 @@ initialized_ (false)
 CEVA_NDE_GrblHub::~CEVA_NDE_GrblHub()
 {
    Shutdown();
-   std::vector<SerialPort*>::iterator i;
-   for (i=ports_.begin(); i!=ports_.end(); i++)
-      delete *i;
+
 }
 
 void CEVA_NDE_GrblHub::GetName(char* name) const
@@ -219,16 +218,16 @@ int CEVA_NDE_GrblHub::Reset(){
    char buff[]={0x18,0x00};
    cmd.assign(buff); 
    std::string returnString;
-   comPort->SetAnswerTimeoutMs(2000);
-   comPort->Purge();
-   int ret = comPort->SetCommand(cmd.c_str(),"\n");
+   SetAnswerTimeoutMs(2000.0);
+	PurgeComPortH();
+   int ret = SetCommandComPortH(cmd.c_str(),"\n");
    if (ret != DEVICE_OK)
     return ret;
-   char an[64];
-   ret = comPort->GetAnswer(an,64,"]\r\n");
+   std::string an;
+   ret = GetSerialAnswerComPortH(an,"]\r\n");
    if (ret != DEVICE_OK)
     return ret;
-   returnString.assign(an);
+   returnString = an;
 
    std::vector<std::string> tokenInput;
 	char* pEnd;
@@ -267,6 +266,8 @@ int CEVA_NDE_GrblHub::GetParameters()
 	$21=100 (homing debounce, msec)
 	$22=1.000 (homing pull-off, mm)
 	*/
+   if(!portAvailable_)
+	   return ERR_NO_PORT_SET;
    std::string cmd;
    cmd.assign("$$"); // x step/mm
    std::string returnString;
@@ -292,28 +293,35 @@ int CEVA_NDE_GrblHub::GetParameters()
 }
 int CEVA_NDE_GrblHub::SendCommand(std::string command, std::string &returnString)
 {
+   if(!portAvailable_)
+	   return ERR_NO_PORT_SET;
    // needs a lock because the other Thread will also use this function
    MMThreadGuard(this->executeLock_);
-   comPort->Purge();
+   PurgeComPortH();
    int ret = DEVICE_OK;
    	if(command.c_str()[0] == '$' && command.c_str()[1] == 'H') 
 	{
+		// Check that we have a controller:
 		ret = GetStatus();
 		if( DEVICE_OK != ret) 
-			return ret;
-	   	comPort->SetAnswerTimeoutMs(60000);  //60s
+		return ret;
+		ret = GetParameters();
+		if( DEVICE_OK != ret)
+		return ret;
+	   	SetAnswerTimeoutMs(60000.0);
 	}
    else if(command.c_str()[0] == '$' || command.c_str()[0] == '?')
-	   comPort->SetAnswerTimeoutMs(1500);  //for long command
+	  SetAnswerTimeoutMs(5000.0);//for long command
    else
-	   comPort->SetAnswerTimeoutMs(100);  //for normal command
+	  SetAnswerTimeoutMs(300.0); //for normal command
 
-   ret = comPort->SetCommand(command.c_str(),"\n");
+   ret = SetCommandComPortH(command.c_str(),"\n");
    if (ret != DEVICE_OK)
    {
 	    LogMessage(std::string("command write fail"));
 	   return ret;
    }
+   std::string an;
    if(command.c_str()[0] == 0x18 ){
         CDeviceUtils::SleepMs(600);
 	    ret = GetParameters();
@@ -323,8 +331,7 @@ int CEVA_NDE_GrblHub::SendCommand(std::string command, std::string &returnString
    }
    else if(command.c_str()[0] == '$' || command.c_str()[0] == '?'){
 
-		char an[1024];
-		ret = comPort->GetAnswer(an,1024,"ok\r\n");
+		ret = GetSerialAnswerComPortH(an,"ok\r\n");
 	   //ret = comPort->Read(answer,3,charsRead);
 	   if (ret != DEVICE_OK)
 	   {
@@ -338,8 +345,8 @@ int CEVA_NDE_GrblHub::SendCommand(std::string command, std::string &returnString
    else{ 
 	   try
 	   {
-		   char an[128];
-			ret = comPort->GetAnswer(an,128,"\r\n");
+
+			ret = GetSerialAnswerComPortH(an,"\r\n");
 		   //ret = comPort->Read(answer,3,charsRead);
 		   if (ret != DEVICE_OK)
 		   {
@@ -348,7 +355,7 @@ int CEVA_NDE_GrblHub::SendCommand(std::string command, std::string &returnString
 		   }
 		   LogMessage(std::string(an),true);
 		   //sample:>>? >><Idle,MPos:0.000,0.000,0.000,WPos:0.000,0.000,0.000>
-		   if (strlen(an) <1)
+		   if (an.length() <1)
 			  return DEVICE_ERR;
 		   returnString.assign(an);
 		   if (returnString.find("ok") != std::string::npos)
@@ -367,13 +374,56 @@ int CEVA_NDE_GrblHub::SendCommand(std::string command, std::string &returnString
 
 MM::DeviceDetectionStatus CEVA_NDE_GrblHub::DetectDevice(void)
 {
-   if (initialized_)
+  if (initialized_)
       return MM::CanCommunicate;
-   MM::DeviceDetectionStatus result = MM::CanNotCommunicate ;
+
+   // all conditions must be satisfied...
+   MM::DeviceDetectionStatus result = MM::Misconfigured;
+   char answerTO[MM::MaxStrLength];
+   
    try
    {
-	   if(DEVICE_OK == GetStatus())
-	   result =  MM::CanCommunicate;
+      std::string portLowerCase = port_;
+      for( std::string::iterator its = portLowerCase.begin(); its != portLowerCase.end(); ++its)
+      {
+         *its = (char)tolower(*its);
+      }
+      if( 0< portLowerCase.length() &&  0 != portLowerCase.compare("undefined")  && 0 != portLowerCase.compare("unknown") )
+      {
+         result = MM::CanNotCommunicate;
+         // record the default answer time out
+         GetCoreCallback()->GetDeviceProperty(port_.c_str(), "AnswerTimeout", answerTO);
+
+         // device specific default communication parameters
+         // for Arduino Duemilanova
+         GetCoreCallback()->SetDeviceProperty(port_.c_str(), MM::g_Keyword_Handshaking, "Off");
+         GetCoreCallback()->SetDeviceProperty(port_.c_str(), MM::g_Keyword_BaudRate, "9600" );
+         GetCoreCallback()->SetDeviceProperty(port_.c_str(), MM::g_Keyword_StopBits, "1");
+         // Arduino timed out in GetControllerVersion even if AnswerTimeout  = 300 ms
+         GetCoreCallback()->SetDeviceProperty(port_.c_str(), "AnswerTimeout", "500.0");
+         GetCoreCallback()->SetDeviceProperty(port_.c_str(), "DelayBetweenCharsMs", "0");
+         MM::Device* pS = GetCoreCallback()->GetDevice(this, port_.c_str());
+         pS->Initialize();
+         // The first second or so after opening the serial port, the Arduino is waiting for firmwareupgrades.  Simply sleep 1 second.
+         CDeviceUtils::SleepMs(2000);
+         MMThreadGuard myLock(lock_);
+         PurgeComPort(port_.c_str());
+         int ret = GetStatus();
+         // later, Initialize will explicitly check the version #
+         if( DEVICE_OK != ret )
+         {
+            LogMessageCode(ret,true);
+         }
+         else
+         {
+            // to succeed must reach here....
+            result = MM::CanCommunicate;
+         }
+         pS->Shutdown();
+         // always restore the AnswerTimeout to the default
+         GetCoreCallback()->SetDeviceProperty(port_.c_str(), "AnswerTimeout", answerTO);
+
+      }
    }
    catch(...)
    {
@@ -393,8 +443,6 @@ int CEVA_NDE_GrblHub::Initialize()
    if (DEVICE_OK != ret)
       return ret;
 
-
-
    MMThreadGuard myLock(lock_);
 
    CPropertyAction* pAct = new CPropertyAction(this, &CEVA_NDE_GrblHub::OnVersion);
@@ -406,50 +454,8 @@ int CEVA_NDE_GrblHub::Initialize()
    ret = CreateProperty("Command","", MM::String, false, pAct);
    if (DEVICE_OK != ret)
       return ret;
-
-   std::string selectPort="Undefined";
-
-   //list all available ports
-   SerialPortLister spl;
-   std::vector<std::string> availablePorts;
-   spl.ListPorts(availablePorts);
-
-
-   std::vector<std::string>::iterator it;
-   for (it=availablePorts.begin(); it!=availablePorts.end(); it++)
-   {
-	   selectPort = *it;
-	   AddAllowedValue("ComPort",selectPort.c_str());
-   }
-
-   selectPort.assign("COM4");
-
-   SetProperty("ComPort",selectPort.c_str());
-
-
    // turn off verbose serial debug messages
    GetCoreCallback()->SetDeviceProperty(port_.c_str(), "Verbose", "0");
-
-  //ret = SetProperty("ComPort","COM4");
-   //if (DEVICE_OK != ret)
-   //   return ret;
-
-   // The first second or so after opening the serial port, the EVA_NDE_Grbl is waiting for firmwareupgrades.  Simply sleep 1 second.
-
-   CDeviceUtils::SleepMs(600);
-   // Check that we have a controller:
-   ret = GetStatus();
-   if( DEVICE_OK != ret) 
-      return ret;
-
-   //ret =SetParameter(0,100);
-   //if( DEVICE_OK != ret)
-   //   return ret;
-
-   ret = GetParameters();
-   if( DEVICE_OK != ret)
-      return ret;
-
    // synchronize all properties
    // --------------------------
    ret = UpdateStatus();
@@ -482,10 +488,11 @@ int CEVA_NDE_GrblHub::DetectInstalledDevices()
    return DEVICE_OK;
 }
 
-int CEVA_NDE_GrblHub::SetAnswerTimeoutMs(double timout)
+int CEVA_NDE_GrblHub::SetAnswerTimeoutMs(double timeout)
 {
-
-   comPort->SetAnswerTimeoutMs(timout);
+      if(!portAvailable_)
+	   return ERR_NO_PORT_SET;
+     GetCoreCallback()->SetDeviceProperty(port_.c_str(), "AnswerTimeout",  CDeviceUtils::ConvertToString(timeout));
    return DEVICE_OK;
 }
 
@@ -493,7 +500,7 @@ int CEVA_NDE_GrblHub::SetAnswerTimeoutMs(double timout)
 int CEVA_NDE_GrblHub::Shutdown()
 {
    initialized_ = false;
-   DestroyPort(comPort);
+
    return DEVICE_OK;
 }
 
@@ -506,17 +513,6 @@ int CEVA_NDE_GrblHub::OnPort(MM::PropertyBase* pProp, MM::ActionType pAct)
    else if (pAct == MM::AfterSet)
    {
       pProp->Get(port_);
-	  DestroyPort(comPort);
-	  comPort = CreatePort(port_.c_str());
-	  comPort->SetCallback (GetCoreCallback());
-	  comPort->SetProperty("AnswerTimeout","0.4");
-	  comPort->SetProperty(MM::g_Keyword_Handshaking, "Off");
-	  portAvailable_ = false;
-	   int ret = Reset(); 
-	   if (DEVICE_OK != ret)
-		  return ret;
-	   if (version_.compare("Grbl 0.8c "))
-		  return ERR_VERSION_MISMATCH;
       portAvailable_ = true;
    }
    return DEVICE_OK;
@@ -527,8 +523,9 @@ int CEVA_NDE_GrblHub::OnStatus(MM::PropertyBase* pProp, MM::ActionType pAct)
    {
 	  int ret = GetStatus();
 	  if(ret != DEVICE_OK)
-		  return DEVICE_ERR;
-      pProp->Set(status.c_str());
+		  pProp->Set("-");
+	  else
+		  pProp->Set(status.c_str());
    }
    return DEVICE_OK;
 }
@@ -561,56 +558,3 @@ int CEVA_NDE_GrblHub::OnCommand(MM::PropertyBase* pProp, MM::ActionType pAct)
    }
    return DEVICE_OK;
 }
-
-SerialPort* CEVA_NDE_GrblHub::CreatePort(const char* portName)
-{
-   // check if the port already exists
-   std::vector<SerialPort*>::iterator i;
-   for (i=ports_.begin(); i!=ports_.end(); i++)
-   {
-      char name[MM::MaxStrLength];
-      (*i)->GetName(name);
-      if (strcmp(name, portName) == 0)
-      {
-          (*i)->LogMessage(("adding reference to Port " + std::string(portName)).c_str() , true);
-         (*i)->AddReference();
-		 (*i)->Initialize();
-         return *i;
-      }
-   }
-
-   // no such port found, so try to create a new one
-   SerialPort* pPort = new SerialPort(portName);
-   pPort->Initialize();
-   //pPort->LogMessage(("created new Port " + std::string(portName)).c_str() , true);
-   ports_.push_back(pPort);
-   pPort->AddReference();
-   //pPort->LogMessage(("adding reference to Port " + std::string(portName)).c_str() , true);
-   return pPort;
-
-}
-
-void CEVA_NDE_GrblHub::DestroyPort(SerialPort* port)
-{
-   std::vector<SerialPort*>::iterator i;
-   for (i=ports_.begin(); i!=ports_.end(); i++)
-   {
-      if (*i == port)
-      {
-         char theName[MM::MaxStrLength];
-         (*i)->GetName(theName);
-         //(*i)->LogMessage("Removing reference to Port " + std::string(theName) , true);
-         (*i)->RemoveReference();
-
-         // really destroy only if there are no references pointing to the port
-         if ((*i)->OKToDelete())
-         {
-            //(*i)->LogMessage("deleting Port " + std::string(theName)) , true);
-            delete *i;
-            ports_.erase(i);
-         }
-         return;       
-      }
-   }
-}
-

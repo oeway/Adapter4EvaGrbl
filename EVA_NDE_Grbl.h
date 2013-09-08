@@ -20,7 +20,7 @@
 #include "../../MMDevice/DeviceBase.h"
 #include <string>
 #include <map>
-#include "SerialPort.h"
+
 //////////////////////////////////////////////////////////////////////////////
 // Error codes
 //
@@ -47,10 +47,6 @@ public:
    CEVA_NDE_GrblHub();
    ~CEVA_NDE_GrblHub();
 
-   SerialPort* CreatePort(const char* portName);
-   void DestroyPort(SerialPort* port);
-
-
    int Initialize();
    int Shutdown();
    void GetName(char* pszName) const;
@@ -75,12 +71,20 @@ public:
    {
       return ReadFromComPort(port_.c_str(), answer, maxLen, bytesRead);
    }
+   int SetCommandComPortH(const char* command, const char* term)
+   {
+	   return SendSerialCommand(port_.c_str(),command,term);
+   }
+    int GetSerialAnswerComPortH (std::string& ans,  const char* term)
+	{
+		return GetSerialAnswer(port_.c_str(),term,ans);
+	}
    static MMThreadLock& GetLock() {return lock_;}
 
    int SendCommand(std::string command, std::string &returnString);
    int SetAnswerTimeoutMs(double timout);
    int SetSync(int axis, double value );
-   SerialPort* comPort;
+
    int GetParameters();
    int SetParameter(int index, double value);
    std::vector<double> parameters;
@@ -100,7 +104,6 @@ private:
    bool timedOutputActive_;
    static MMThreadLock lock_;
 
-   std::vector<SerialPort*> ports_;
 };
 
 #endif //_EVA_NDE_Grbl_H_

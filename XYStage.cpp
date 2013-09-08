@@ -126,9 +126,6 @@ XYStage::XYStage() :
    // set default error messages
    InitializeDefaultErrorMessages();
 
-   // set device specific error messages
-   SetErrorText(ERR_PORT_CHANGE_FORBIDDEN, "Serial port can't be changed at run-time."
-                                           " Use configuration utility or modify configuration file manually.");
 
    // create pre-initialization properties
    // ------------------------------------
