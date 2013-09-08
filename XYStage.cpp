@@ -237,11 +237,19 @@ bool XYStage::Busy()
  
 double XYStage::GetStepSizeXUm()
 {
+	CEVA_NDE_GrblHub* hub = static_cast<CEVA_NDE_GrblHub*>(GetParentHub());
+	if (!hub || !hub->IsPortAvailable()) {
+		return ERR_NO_PORT_SET;
+	}
    return 1000.0/(*parameters_)[0];
 }
 
 double XYStage::GetStepSizeYUm()
 {
+	CEVA_NDE_GrblHub* hub = static_cast<CEVA_NDE_GrblHub*>(GetParentHub());
+	if (!hub || !hub->IsPortAvailable()) {
+		return ERR_NO_PORT_SET;
+	}
    return 1000.0/(*parameters_)[1];
 }
 
@@ -341,10 +349,20 @@ int XYStage::SetRelativePositionUm(double dx, double dy){
  */
 int XYStage::Home()
 {
-   int ret;
-   home_ = true; // successfully homed
+   	CEVA_NDE_GrblHub* hub = static_cast<CEVA_NDE_GrblHub*>(GetParentHub());
+	if (!hub || !hub->IsPortAvailable()) {
+		return ERR_NO_PORT_SET;
+	}
+	int ret;
+	ret = hub->SetProperty("Command","$H");
+	if (ret != DEVICE_OK)
+	{
+		LogMessage(std::string("Homing error!"));
+		return ret;
+	}
+	else
+		home_ = true; // successfully homed
    // check status
-   
    return DEVICE_OK;
 }
 
@@ -354,8 +372,7 @@ int XYStage::Home()
 int XYStage::Stop()
 {
    int ret;
-
-	return DEVICE_OK;
+   return DEVICE_OK;
 }
 
 /**
@@ -420,11 +437,11 @@ int XYStage::OnAcceleration(MM::PropertyBase* pProp, MM::ActionType eAct)
 {
    if (eAct == MM::BeforeGet) 
    {
-
+	    pProp->Set(moveTimeoutMs_);
    } 
    else if (eAct == MM::AfterSet) 
    {
-
+	   pProp->Get(moveTimeoutMs_);
 
    }
 

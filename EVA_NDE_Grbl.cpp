@@ -17,7 +17,6 @@
 #include "../../MMDevice/ModuleInterface.h"
 #include <sstream>
 #include <cstdio>
-#include "SerialPort.h"
 
 #ifdef WIN32
    #define WIN32_LEAN_AND_MEAN
@@ -212,31 +211,31 @@ int CEVA_NDE_GrblHub::SetParameter(int index, double value){
    int ret = SendCommand(cmd,returnString);
    return ret;
 }
-int CEVA_NDE_GrblHub::Reset(){
-	MMThreadGuard(this->executeLock_);
-   std::string cmd;
-   char buff[]={0x18,0x00};
-   cmd.assign(buff); 
-   std::string returnString;
-   SetAnswerTimeoutMs(2000.0);
-	PurgeComPortH();
-   int ret = SetCommandComPortH(cmd.c_str(),"\n");
-   if (ret != DEVICE_OK)
-    return ret;
-   std::string an;
-   ret = GetSerialAnswerComPortH(an,"]\r\n");
-   if (ret != DEVICE_OK)
-    return ret;
-   returnString = an;
-
-   std::vector<std::string> tokenInput;
-	char* pEnd;
-   	CDeviceUtils::Tokenize(returnString, tokenInput, "\r\n[");
-   if(tokenInput.size() != 2)
-	   return DEVICE_ERR;
-   version_ = tokenInput[0];
-   return ret;
-}
+//int CEVA_NDE_GrblHub::Reset(){
+//	MMThreadGuard(this->executeLock_);
+//   std::string cmd;
+//   char buff[]={0x18,0x00};
+//   cmd.assign(buff); 
+//   std::string returnString;
+//   SetAnswerTimeoutMs(2000.0);
+//	PurgeComPortH();
+//   int ret = SetCommandComPortH(cmd.c_str(),"\n");
+//   if (ret != DEVICE_OK)
+//    return ret;
+//   std::string an;
+//   ret = GetSerialAnswerComPortH(an,"]\r\n");
+//   if (ret != DEVICE_OK)
+//    return ret;
+//   returnString = an;
+//
+//   std::vector<std::string> tokenInput;
+//	char* pEnd;
+//   	CDeviceUtils::Tokenize(returnString, tokenInput, "\r\n[");
+//   if(tokenInput.size() != 2)
+//	   return DEVICE_ERR;
+//   version_ = tokenInput[0];
+//   return ret;
+//}
 
 int CEVA_NDE_GrblHub::GetParameters()
 {

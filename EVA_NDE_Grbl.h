@@ -88,7 +88,7 @@ public:
    int GetParameters();
    int SetParameter(int index, double value);
    std::vector<double> parameters;
-   int Reset();
+   //int Reset();
    double MPos[3];
    double WPos[3];
    int GetStatus(); 
